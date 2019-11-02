@@ -4,9 +4,9 @@ import random
 import math
 class FlappyAgent:
     q = {}
-    learning_rate = 0.2
-    discount_factor = 0.999
-    epsilon = 0.1
+    learning_rate = 0.1
+    discount_factor = 0.9
+    epsilon = 0.01
     episode = []
     buckets = 15.0
     newKey = 0
@@ -14,7 +14,7 @@ class FlappyAgent:
     lastAction = 1
     maxs = {'player_y':512.0,
             'player_vel':18.0,
-            'next_pipe_dist_to_player':288.0,
+            'next_pipe_dist_to_player':150.0,
             'next_pipe_top_y':150.0,
             'next_pipe_bottom_y':412.0,
             'next_next_pipe_dist_to_player':288.0,
@@ -70,53 +70,36 @@ class FlappyAgentMC(FlappyAgent):
         return
 
     def training_policy(self, state):
-        """ Returns the index of the action that should be done in state while training the agent.
-            Possible actions in Flappy Bird are 0 (flap the wing) or 1 (do nothing).
-
-            training_policy is called once per frame in the game while training
-        """
-        # print("state: %s" % state)
-        # TODO: change this to to policy the agent is supposed to use while training
-        # At the moment we just return an action uniformly at random.
-        action = 0
         if random.random() >= self.epsilon:
-            noFlap = 0.0
-            flap = 0.0
-            try:
-                noFlap = self.q[(state, 1)]
-            except KeyError:
-                # print((state,1), end='')                
-                # self.q[state, 1] = 0
-                noFlap = -1000
-            try:
-                flap = self.q[(state, 0)]
-            except KeyError:
-                # self.q[state, 0] = 0
-                # print((state,0), end='')                
-                flap = -1000
-            if flap > noFlap:
-                action = 0
-            # elif flap == noFlap:
-            #     action = random.randint(0, 1) 
-            else:
-                action = 1
+            self.lastAction = self.policy(state)
+        elif random.randint(1,10) == 10:
+            self.lastAction = 0
         else:
-            action = random.randint(0, 1) 
-        return action
-        
+            self.lastAction = 1
+        return self.lastAction
 
     def policy(self, state):
-        """ Returns the index of the action that should be done in state when training is completed.
-            Possible actions in Flappy Bird are 0 (flap the wing) or 1 (do nothing).
+        action = 0
+        noFlap = 0.0
+        flap = 0.0
+        try:
+            noFlap = self.q[(state, 1)]
+        except KeyError:
+            self.q[(state, 0)] = self.initialQ
+            noFlap = -1000.0
+        try:
+            flap = self.q[(state, 0)]
+        except KeyError:
+            self.q[(state, 0)] = self.initialQ
+            flap = -1000.0
+        if flap > noFlap:
+            action = 0
+        elif flap == noFlap and random.randint(1,10) == 10:
+            action = 0
+        else:
+            action = 1
+        return action
 
-            policy is called once per frame in the game (30 times per second in real-time)
-            and needs to be sufficiently fast to not slow down the game.
-        """
-        return self.training_policy(state)
-        # print("state: %s" % state)
-        # # TODO: change this to to policy the agent has learned
-        # # At the moment we just return an action uniformly at random.
-        # return random.randint(0, 1) 
     def discretize_state(self, state):
         #state: player_y, player_vel, next_pipe_dist_to_player, next_pipe_top_y, next_pipe_bottom_y, next_next_pipe_dist_to_player, next_next_pipe_top_y, next_next_pipe_bottom_y
         dstate = (math.floor(state['player_y']*self.buckets/self.maxs['player_y']),
@@ -191,7 +174,7 @@ class FlappyAgentBest(FlappyAgent):
         return
     
     def reward_values(self):
-        return {"positive": 1.0, "tick": 0.0, "loss": -5.0}
+        return {"positive": 1.0, "tick": 0.0, "loss": -50.0}
     
     def observe(self, s1, a, r, s2, end):
         try:
@@ -207,11 +190,12 @@ class FlappyAgentBest(FlappyAgent):
 
     def training_policy(self, state):
         if random.random() >= self.epsilon:
-            return self.policy(state)
+            self.lastAction = self.policy(state)
         elif random.randint(1,10) == 10:
-            return 0
-        return 1
-        
+            self.lastAction = 0
+        else:
+            self.lastAction = 1
+        return self.lastAction
 
     def policy(self, state):
         action = 0
@@ -233,52 +217,118 @@ class FlappyAgentBest(FlappyAgent):
             action = 0
         else:
             action = 1
-        self.lastAction = action
         return action
 
     def discretize_state(self, state):
         #state: player_y, player_vel, next_pipe_dist_to_player, next_pipe_top_y, next_pipe_bottom_y, next_next_pipe_dist_to_player, next_next_pipe_top_y, next_next_pipe_bottom_y
-        deltaY = state['player_y'] - state['next_pipe_top_y'] - 30
+        stable = 30
+        pipeDeltaY = 0
+        if state['next_pipe_top_y'] - state['next_next_pipe_top_y'] -50 < 0:
+            pipeDeltaY = -1
+        if state['next_pipe_top_y'] - state['next_next_pipe_top_y'] -50 > 0:
+            pipeDeltaY = 1
+        deltaY = state['player_y'] - state['next_pipe_top_y'] - stable
         dist = state['next_pipe_dist_to_player']
         playerVel = 1
-        pipeDeltaY = 1
         if state['player_vel'] < 0:
             playerVel = -1
-        if state['next_pipe_top_y'] - state['next_next_pipe_top_y'] < 0:
-            pipeDeltaY = -1
-        if dist < 15:
-            deltaY = state['player_y'] - state['next_next_pipe_top_y'] - 30
+        if dist < 10:
+            deltaY = state['player_y'] - state['next_next_pipe_top_y'] - stable
         if deltaY > 1:
             deltaY = 1
         elif deltaY < -1:
             deltaY = -1
         dstate = (deltaY
-                #math.floor(deltaY*self.buckets/self.maxs['next_pipe_top_y'])
+                # math.floor(deltaY*self.buckets/self.maxs['next_pipe_top_y'])
                 ,playerVel
                 # ,math.floor(dist*self.buckets/self.maxs['next_pipe_dist_to_player'])
-                ,pipeDeltaY,
+                ,pipeDeltaY
                 # ,math.floor(pipeDeltaY*self.buckets/self.maxs['next_pipe_top_y'])
-                self.lastAction
+                # ,self.lastAction
                 )
         # for i in range(len(dstate)):
         #     if dstate[i] == 0:
         #         print(i, end=' ')
         return dstate
 
+class FlappyAgentLFA(FlappyAgent):
+    def __init__(self):
+        return
+    
+    def reward_values(self):
+        return {"positive": 1.0, "tick": 0.0, "loss": -5.0}
+    
+    def observe(self, s1, a, r, s2, end):
+        self.episode.append([s1,a,r])
+        if end:
+            G = 0
+            for s,a,r in self.episode[::-1]:
+                G = r + self.discount_factor * G
+                try:
+                    self.q[(s,a)] = self.q[(s,a)] + self.learning_rate*(G - self.q[(s,a)])
+                except:
+                    self.q[(s,a)] = G
+            self.episode = []
+        return
+
+    def training_policy(self, state):
+        if random.random() >= self.epsilon:
+            self.lastAction = self.policy(state)
+        elif random.randint(1,10) == 10:
+            self.lastAction = 0
+        else:
+            self.lastAction = 1
+        return self.lastAction
+
+    def policy(self, state):
+        action = 0
+        noFlap = 0.0
+        flap = 0.0
+        try:
+            noFlap = self.q[(state, 1)]
+        except KeyError:
+            self.q[(state, 0)] = self.initialQ
+            noFlap = -1000.0
+        try:
+            flap = self.q[(state, 0)]
+        except KeyError:
+            self.q[(state, 0)] = self.initialQ
+            flap = -1000.0
+        if flap > noFlap:
+            action = 0
+        elif flap == noFlap and random.randint(1,10) == 10:
+            action = 0
+        else:
+            action = 1
+        return action
+
+    def linear_regression(self, X, y, m_current=0, b_current=0, epochs=1000):
+        N = float(len(y))
+        for i in range(epochs):
+            y_current = (m_current * X) + b_current
+            m_gradient = -(2/N) * sum(X * (y - y_current))
+            b_gradient = -(2/N) * sum(y - y_current)
+            m_current = m_current - (self.learning_rate * m_gradient)
+            b_current = b_current - (self.learning_rate * b_gradient)
+        return m_current, b_current
+
+    def discretize_state(self, state):
+        return state['player_y'] - state['next_pipe_top_y']
+
 def run_game(nb_episodes, agent):
     reward_values = agent.reward_values()
     
-    env = PLE(FlappyBird(), fps=30, display_screen=True, force_fps=True, rng=None, reward_values = reward_values)
+    env = PLE(FlappyBird(), fps=30, display_screen=True, force_fps=False, rng=None, reward_values = reward_values)
     env.init()
     maxScore = 0
     score = 0
-    test = False
+    test = 0
     frames = 0
     acScore = 0
     while nb_episodes > 0:
         action = 0
         state = agent.discretize_state(env.game.getGameState())
-        if test:
+        if test > 0:
             action = agent.policy(state)
         else:
             action = agent.training_policy(state)
@@ -287,27 +337,35 @@ def run_game(nb_episodes, agent):
         frames += 1
         if reward > 0:
             score += reward
+        # statePrime = env.game.getGameState()
+        # if env.game_over():
+        #     reward = -abs(statePrime['player_y'] - statePrime['next_pipe_top_y'] - 50)
         statePrime = agent.discretize_state(env.game.getGameState())
         agent.observe(state, action, reward, statePrime, env.game_over())
-            
+        # if action == 0:
+        #     reward += env.act(env.getActionSet()[1])   
         if env.game_over():
-            if (runs - nb_episodes) % 100 == 99:
+            if (runs - nb_episodes) % 1000 == 999:
                 env.display_screen = True
                 env.force_fps = False
-                test = not test
+                test = 10
                 acScore = 0
-                print(len(agent.q))
+                print('State space:',len(agent.q))
 
                 agent.learning_rate /= 2
+            elif test > 0:
+                test -= 1
             else:
-                env.display_screen = False
+                # env.display_screen = False
                 env.force_fps = True
+
             if score > maxScore:
                 maxScore = score
-            if score > 0:
+                print("Highscore:", maxScore)
+            if test > 0:
                 acScore += score
-                avgScore = acScore/((runs - nb_episodes ) % 100 + 1)
-                print("Highscore:", maxScore, "Average:", format(avgScore, '.3f'), "Keys:", agent.newKey, "Frame:", frames, "Episode:", runs - nb_episodes, " Score:", score)
+                avgScore = acScore/(11 - test)
+                print("Highscore:", maxScore, "Average:", format(avgScore, '.3f'), "Keys:", agent.newKey, "Frame:", frames, "Episode:", runs - nb_episodes + 1, " Score:", score)
             agent.newKey = 0
             if frames == 1000000:
                 print("Frame limit reached")
@@ -321,6 +379,26 @@ def run_game(nb_episodes, agent):
 runs = 100000
 # agent = FlappyAgentMC()
 # agent = FlappyAgentQ()
+# agent = FlappyAgentLFA()
 agent = FlappyAgentBest()
 run_game(runs, agent)
 
+# a = 0.4
+# e = 0.25
+# g = 0.9
+# q = {'a,up':0, 'b,up':0, 'c,up':0, 'd,right':0, 'e,right':0,'f,down':0}
+# lastState = 'a,up'
+# for i in range(10000):
+#     for s,r in q.items():
+#         if s == 'f,down':
+#             q[lastState] = q[lastState] + a*(0 + g*q[s] - q[lastState])
+#             q[s] = q[s] + a*(10 - q[s])
+#         else:
+#             q[lastState] = q[lastState] + a*(0 + g*q[s] - q[lastState])
+#             lastState = s
+#     for x in q.items():
+#         if x[1] != 0:
+#             print(x)
+#     print()
+
+ 
