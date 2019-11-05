@@ -232,7 +232,7 @@ class FlappyAgentBest(FlappyAgent):
         playerVel = 1
         if state['player_vel'] < 0:
             playerVel = -1
-        if dist < 10:
+        if dist < 15:
             deltaY = state['player_y'] - state['next_next_pipe_top_y'] - stable
         if deltaY > 1:
             deltaY = 1
@@ -244,7 +244,7 @@ class FlappyAgentBest(FlappyAgent):
                 # ,math.floor(dist*self.buckets/self.maxs['next_pipe_dist_to_player'])
                 ,pipeDeltaY
                 # ,math.floor(pipeDeltaY*self.buckets/self.maxs['next_pipe_top_y'])
-                # ,self.lastAction
+                ,self.lastAction
                 )
         # for i in range(len(dstate)):
         #     if dstate[i] == 0:
@@ -325,6 +325,8 @@ def run_game(nb_episodes, agent):
     test = 0
     frames = 0
     acScore = 0
+    trainingEpisodes = 100
+    testingEpisodes = 10
     while nb_episodes > 0:
         action = 0
         state = agent.discretize_state(env.game.getGameState())
@@ -345,10 +347,10 @@ def run_game(nb_episodes, agent):
         # if action == 0:
         #     reward += env.act(env.getActionSet()[1])   
         if env.game_over():
-            if (runs - nb_episodes) % 1000 == 999:
+            if (runs - nb_episodes) % trainingEpisodes == (trainingEpisodes - 1):
                 env.display_screen = True
                 env.force_fps = False
-                test = 10
+                test = testingEpisodes
                 acScore = 0
                 print('State space:',len(agent.q))
 
@@ -364,7 +366,7 @@ def run_game(nb_episodes, agent):
                 print("Highscore:", maxScore)
             if test > 0:
                 acScore += score
-                avgScore = acScore/(11 - test)
+                avgScore = acScore/((testingEpisodes+1) - test)
                 print("Highscore:", maxScore, "Average:", format(avgScore, '.3f'), "Keys:", agent.newKey, "Frame:", frames, "Episode:", runs - nb_episodes + 1, " Score:", score)
             agent.newKey = 0
             if frames == 1000000:
@@ -400,5 +402,3 @@ run_game(runs, agent)
 #         if x[1] != 0:
 #             print(x)
 #     print()
-
- 
