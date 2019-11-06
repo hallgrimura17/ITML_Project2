@@ -2,11 +2,15 @@ from ple.games.flappybird import FlappyBird
 from ple import PLE
 import random
 import math
+import matplotlib.pyplot as plt
+import numpy as np
+
+
 class FlappyAgent:
     q = {}
     learning_rate = 0.1
     discount_factor = 0.9
-    epsilon = 0.01
+    epsilon = 0.1
     episode = []
     buckets = 15.0
     newKey = 0
@@ -30,42 +34,27 @@ class FlappyAgent:
     def discretize_state(self, state): raise NotImplementedError("Override me")
 
 class FlappyAgentMC(FlappyAgent):
+    filename = 'MC.png'
+
     def __init__(self):
+        print('Monte Carlo')
         return
     
     def reward_values(self):
-        """ returns the reward values used for training
-        
-            Note: These are only the rewards used for training.
-            The rewards used for evaluating the agent will always be
-            1 for passing through each pipe and 0 for all other state
-            transitions.
-        """
+
         return {"positive": 1.0, "tick": 0.0, "loss": -5.0}
     
     def observe(self, s1, a, r, s2, end):
-        """ this function is called during training on each step of the game where
-            the state transition is going from state s1 with action a to state s2 and
-            yields the reward r. If s2 is a terminal state, end==True, otherwise end==False.
-            
-            Unless a terminal state was reached, two subsequent calls to observe will be for
-            subsequent steps in the same episode. That is, s1 in the second call will be s2
-            from the first call.
-            """
+
         self.episode.append([s1,a,r])
-        # print('h', end='')
         if end:
             G = 0
             for s,a,r in self.episode[::-1]:
-                # print(s,a,r)
                 G = r + self.discount_factor * G
                 try:
                     self.q[(s,a)] = self.q[(s,a)] + self.learning_rate*(G - self.q[(s,a)])
                 except:
                     self.q[(s,a)] = G
-                    # print((s,a))
-                # if self.q[(s,a)] != 0:
-                #     print(self.q[(s,a)], end=' ')
             self.episode = []
         return
 
@@ -86,12 +75,12 @@ class FlappyAgentMC(FlappyAgent):
             noFlap = self.q[(state, 1)]
         except KeyError:
             self.q[(state, 0)] = self.initialQ
-            noFlap = -1000.0
+            noFlap = 0.0
         try:
             flap = self.q[(state, 0)]
         except KeyError:
             self.q[(state, 0)] = self.initialQ
-            flap = -1000.0
+            flap = 0.0
         if flap > noFlap:
             action = 0
         elif flap == noFlap and random.randint(1,10) == 10:
@@ -101,45 +90,42 @@ class FlappyAgentMC(FlappyAgent):
         return action
 
     def discretize_state(self, state):
-        #state: player_y, player_vel, next_pipe_dist_to_player, next_pipe_top_y, next_pipe_bottom_y, next_next_pipe_dist_to_player, next_next_pipe_top_y, next_next_pipe_bottom_y
         dstate = (math.floor(state['player_y']*self.buckets/self.maxs['player_y']),
                 math.floor(state['player_vel']),
                 math.floor(state['next_pipe_dist_to_player']*self.buckets/self.maxs['next_pipe_dist_to_player']),
                 math.floor(state['next_pipe_top_y']*self.buckets/self.maxs['next_pipe_top_y']))
-        
-        # for x in dstate:
-            # if x >= 16:
-                # print(x)
         return dstate
 
 class FlappyAgentQ(FlappyAgent):
+    filename = 'Q.png'
     def __init__(self):
+        print('Q-learning')
+
         return
     
     def reward_values(self):
         return {"positive": 1.0, "tick": 0.0, "loss": -5.0}
     
     def observe(self, s1, a, r, s2, end):
-        if not end:
-                try:
-                    aprime = self.policy(s2)
-                    self.q[(s1,a)] = self.q[(s1,a)] + self.learning_rate * (r + self.discount_factor * self.q[(s2,aprime)] - self.q[(s1,a)])
-                except KeyError:
-                    self.q[(s1,a)] = r
+        try:
+            if not end:
+                aprime = self.policy(s2)
+                self.q[(s1,a)] = self.q[(s1,a)] + self.learning_rate * (r + self.discount_factor * self.q[(s2,aprime)] - self.q[(s1,a)])
+            else:
+                self.q[(s1,a)] = self.q[(s1,a)] + self.learning_rate * (r - self.q[(s1,a)])
+        except KeyError:
+                    self.q[(s1,a)] = self.initialQ
                     self.newKey += 1
-        else:
-                try:
-                    self.q[(s1,a)] = self.q[(s1,a)] + self.learning_rate * (r - self.q[(s1,a)])
-                except KeyError:
-                    self.q[(s1,a)] = r
         return
 
     def training_policy(self, state):
         if random.random() >= self.epsilon:
-            return self.policy(state)
+            self.lastAction = self.policy(state)
+        elif random.randint(1,10) == 10:
+            self.lastAction = 0
         else:
-            return random.randint(0, 1) 
-        
+            self.lastAction = 1
+        return self.lastAction
 
     def policy(self, state):
         action = 0
@@ -148,11 +134,13 @@ class FlappyAgentQ(FlappyAgent):
         try:
             noFlap = self.q[(state, 1)]
         except KeyError:
-            noFlap = -1000.0
+            self.q[(state, 0)] = self.initialQ
+            noFlap = 0.0
         try:
             flap = self.q[(state, 0)]
         except KeyError:
-            flap = -1000.0
+            self.q[(state, 0)] = self.initialQ
+            flap = 0.0
         if flap > noFlap:
             action = 0
         elif flap == noFlap and random.randint(1,10) == 10:
@@ -160,6 +148,7 @@ class FlappyAgentQ(FlappyAgent):
         else:
             action = 1
         return action
+
 
     def discretize_state(self, state):
         #state: player_y, player_vel, next_pipe_dist_to_player, next_pipe_top_y, next_pipe_bottom_y, next_next_pipe_dist_to_player, next_next_pipe_top_y, next_next_pipe_bottom_y
@@ -170,7 +159,9 @@ class FlappyAgentQ(FlappyAgent):
         return dstate
 
 class FlappyAgentBest(FlappyAgent):
+    filename = 'Best.png'
     def __init__(self):
+        print('Best')
         return
     
     def reward_values(self):
@@ -205,12 +196,12 @@ class FlappyAgentBest(FlappyAgent):
             noFlap = self.q[(state, 1)]
         except KeyError:
             self.q[(state, 0)] = self.initialQ
-            noFlap = -1000.0
+            noFlap = 0.0
         try:
             flap = self.q[(state, 0)]
         except KeyError:
             self.q[(state, 0)] = self.initialQ
-            flap = -1000.0
+            flap = 0.0
         if flap > noFlap:
             action = 0
         elif flap == noFlap and random.randint(1,10) == 10:
@@ -220,7 +211,6 @@ class FlappyAgentBest(FlappyAgent):
         return action
 
     def discretize_state(self, state):
-        #state: player_y, player_vel, next_pipe_dist_to_player, next_pipe_top_y, next_pipe_bottom_y, next_next_pipe_dist_to_player, next_next_pipe_top_y, next_next_pipe_bottom_y
         stable = 30
         pipeDeltaY = 0
         if state['next_pipe_top_y'] - state['next_next_pipe_top_y'] -50 < 0:
@@ -232,12 +222,14 @@ class FlappyAgentBest(FlappyAgent):
         playerVel = 1
         if state['player_vel'] < 0:
             playerVel = -1
-        if dist < 15:
+        if dist < 10:
             deltaY = state['player_y'] - state['next_next_pipe_top_y'] - stable
         if deltaY > 1:
             deltaY = 1
         elif deltaY < -1:
             deltaY = -1
+        else:
+            deltaY = 0
         dstate = (deltaY
                 # math.floor(deltaY*self.buckets/self.maxs['next_pipe_top_y'])
                 ,playerVel
@@ -252,6 +244,9 @@ class FlappyAgentBest(FlappyAgent):
         return dstate
 
 class FlappyAgentLFA(FlappyAgent):
+    filename = 'LFA.png'
+    flapv = [0,0,0,0]
+    noflapv = [0,0,0,0]
     def __init__(self):
         return
     
@@ -264,12 +259,13 @@ class FlappyAgentLFA(FlappyAgent):
             G = 0
             for s,a,r in self.episode[::-1]:
                 G = r + self.discount_factor * G
-                try:
-                    self.q[(s,a)] = self.q[(s,a)] + self.learning_rate*(G - self.q[(s,a)])
-                except:
-                    self.q[(s,a)] = G
+                if a == 0:
+                    for i in range(len(self.flapv)):
+                        self.flapv[i] = self.flapv[i] + self.learning_rate * (G - self.flapv[i]) * s[i]
+                else:
+                    for i in range(len(self.noflapv)):
+                        self.noflapv[i] = self.noflapv[i] + self.learning_rate * (G - self.noflapv[i]) * s[i]
             self.episode = []
-        return
 
     def training_policy(self, state):
         if random.random() >= self.epsilon:
@@ -281,44 +277,20 @@ class FlappyAgentLFA(FlappyAgent):
         return self.lastAction
 
     def policy(self, state):
-        action = 0
-        noFlap = 0.0
-        flap = 0.0
-        try:
-            noFlap = self.q[(state, 1)]
-        except KeyError:
-            self.q[(state, 0)] = self.initialQ
-            noFlap = -1000.0
-        try:
-            flap = self.q[(state, 0)]
-        except KeyError:
-            self.q[(state, 0)] = self.initialQ
-            flap = -1000.0
-        if flap > noFlap:
+        action = 1
+        flap = np.dot(self.flapv, state)
+        noflap = np.dot(self.noflapv, state)
+        if flap > noflap:
             action = 0
-        elif flap == noFlap and random.randint(1,10) == 10:
-            action = 0
-        else:
-            action = 1
         return action
 
-    def linear_regression(self, X, y, m_current=0, b_current=0, epochs=1000):
-        N = float(len(y))
-        for i in range(epochs):
-            y_current = (m_current * X) + b_current
-            m_gradient = -(2/N) * sum(X * (y - y_current))
-            b_gradient = -(2/N) * sum(y - y_current)
-            m_current = m_current - (self.learning_rate * m_gradient)
-            b_current = b_current - (self.learning_rate * b_gradient)
-        return m_current, b_current
-
     def discretize_state(self, state):
-        return state['player_y'] - state['next_pipe_top_y']
+        return (state['player_y'], state['player_vel'], state['next_pipe_top_y'], state['next_pipe_dist_to_player'])
 
 def run_game(nb_episodes, agent):
     reward_values = agent.reward_values()
     
-    env = PLE(FlappyBird(), fps=30, display_screen=True, force_fps=False, rng=None, reward_values = reward_values)
+    env = PLE(FlappyBird(), fps=30, display_screen=False, force_fps=True, rng=None, reward_values = reward_values)
     env.init()
     maxScore = 0
     score = 0
@@ -326,7 +298,10 @@ def run_game(nb_episodes, agent):
     frames = 0
     acScore = 0
     trainingEpisodes = 100
-    testingEpisodes = 10
+    testingEpisodes = 0
+    avgScore = 0
+    avgScoresArray = []
+    framesArray = []
     while nb_episodes > 0:
         action = 0
         state = agent.discretize_state(env.game.getGameState())
@@ -336,9 +311,18 @@ def run_game(nb_episodes, agent):
             action = agent.training_policy(state)
 
         reward = env.act(env.getActionSet()[action])
+        if frames % 1000 == 0 and frames != 0:
+            # acScore = 0
+            avgScoresArray.append(avgScore)
+            framesArray.append(frames)
+            plt.plot(framesArray, avgScoresArray)
+            plt.savefig(agent.filename)
+            # plt.show()
         frames += 1
         if reward > 0:
             score += reward
+            acScore += score
+            avgScore = acScore/(runs - nb_episodes + 1)
         # statePrime = env.game.getGameState()
         # if env.game_over():
         #     reward = -abs(statePrime['player_y'] - statePrime['next_pipe_top_y'] - 50)
@@ -348,17 +332,18 @@ def run_game(nb_episodes, agent):
         #     reward += env.act(env.getActionSet()[1])   
         if env.game_over():
             if (runs - nb_episodes) % trainingEpisodes == (trainingEpisodes - 1):
-                env.display_screen = True
-                env.force_fps = False
+                # env.display_screen = True
+                # env.force_fps = False
                 test = testingEpisodes
-                acScore = 0
+                # acScore = 0
                 print('State space:',len(agent.q))
-
+                # if (runs - nb_episodes) == 200:
+                #     agent.learning_rate = 0
                 agent.learning_rate /= 2
             elif test > 0:
                 test -= 1
             else:
-                # env.display_screen = False
+                env.display_screen = False
                 env.force_fps = True
 
             if score > maxScore:
@@ -380,9 +365,9 @@ def run_game(nb_episodes, agent):
 
 runs = 100000
 # agent = FlappyAgentMC()
-# agent = FlappyAgentQ()
+agent = FlappyAgentQ()
 # agent = FlappyAgentLFA()
-agent = FlappyAgentBest()
+# agent = FlappyAgentBest()
 run_game(runs, agent)
 
 # a = 0.4
@@ -390,15 +375,18 @@ run_game(runs, agent)
 # g = 0.9
 # q = {'a,up':0, 'b,up':0, 'c,up':0, 'd,right':0, 'e,right':0,'f,down':0}
 # lastState = 'a,up'
-# for i in range(10000):
+# for i in range(10):
 #     for s,r in q.items():
 #         if s == 'f,down':
 #             q[lastState] = q[lastState] + a*(0 + g*q[s] - q[lastState])
+#             q[lastState] = float(format(q[lastState], '.3f'))
 #             q[s] = q[s] + a*(10 - q[s])
 #         else:
 #             q[lastState] = q[lastState] + a*(0 + g*q[s] - q[lastState])
+#             q[lastState] = float(format(q[lastState], '.3f'))
 #             lastState = s
+#     print('Run', i + 1)
 #     for x in q.items():
 #         if x[1] != 0:
-#             print(x)
+#             print(x, end=', ')
 #     print()
