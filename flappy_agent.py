@@ -10,7 +10,7 @@ class FlappyAgent:
     q = {}
     learning_rate = 0.1
     discount_factor = 0.9
-    epsilon = 0.1
+    epsilon = 0.0
     episode = []
     buckets = 15.0
     newKey = 0
@@ -74,12 +74,10 @@ class FlappyAgentMC(FlappyAgent):
         try:
             noFlap = self.q[(state, 1)]
         except KeyError:
-            self.q[(state, 0)] = self.initialQ
             noFlap = 0.0
         try:
             flap = self.q[(state, 0)]
         except KeyError:
-            self.q[(state, 0)] = self.initialQ
             flap = 0.0
         if flap > noFlap:
             action = 0
@@ -298,7 +296,7 @@ def run_game(nb_episodes, agent):
     frames = 0
     acScore = 0
     trainingEpisodes = 100
-    testingEpisodes = 0
+    testingEpisodes = 1
     avgScore = 0
     avgScoresArray = []
     framesArray = []
@@ -313,6 +311,7 @@ def run_game(nb_episodes, agent):
         reward = env.act(env.getActionSet()[action])
         if frames % 1000 == 0 and frames != 0:
             # acScore = 0
+            avgScore = acScore/(runs - nb_episodes + 1)
             avgScoresArray.append(avgScore)
             framesArray.append(frames)
             plt.plot(framesArray, avgScoresArray)
@@ -321,8 +320,12 @@ def run_game(nb_episodes, agent):
         frames += 1
         if reward > 0:
             score += reward
-            acScore += score
-            avgScore = acScore/(runs - nb_episodes + 1)
+            acScore += reward
+        if score == 2000:
+            env.display_screen = True
+            env.force_fps = False
+        if score % 1000 == 0 and score != 0:
+            print('episode:',(runs - nb_episodes),'Big score', score)
         # statePrime = env.game.getGameState()
         # if env.game_over():
         #     reward = -abs(statePrime['player_y'] - statePrime['next_pipe_top_y'] - 50)
@@ -336,7 +339,7 @@ def run_game(nb_episodes, agent):
                 # env.force_fps = False
                 test = testingEpisodes
                 # acScore = 0
-                print('State space:',len(agent.q))
+                print('State space:', len(agent.q))
                 # if (runs - nb_episodes) == 200:
                 #     agent.learning_rate = 0
                 agent.learning_rate /= 2
@@ -365,9 +368,9 @@ def run_game(nb_episodes, agent):
 
 runs = 100000
 # agent = FlappyAgentMC()
-agent = FlappyAgentQ()
+# agent = FlappyAgentQ()
 # agent = FlappyAgentLFA()
-# agent = FlappyAgentBest()
+agent = FlappyAgentBest()
 run_game(runs, agent)
 
 # a = 0.4
